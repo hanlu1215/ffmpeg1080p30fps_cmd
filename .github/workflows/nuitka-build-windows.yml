@@ -1,0 +1,55 @@
+name: Nuitka Build (Windows)
+
+on:
+  push:
+    tags: [ 'v*.*.*' ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Build with Nuitka
+        uses: Nuitka/Nuitka-Action@main
+        with:
+          script-name: ffmpeg1080p30fps_cmd.py
+          mode: onefile
+
+          output-file: ffmpeg1080p30fps_cmd
+          output-dir: dist
+          lto: yes
+
+      - name: List dist (Windows)
+        run: dir dist || true
+
+      - name: Rename binary to include tag name (Windows)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          if (Test-Path -Path "dist/ffmpeg1080p30fps_cmd.exe") {
+            Rename-Item -Path "dist/ffmpeg1080p30fps_cmd.exe" -NewName "ffmpeg1080p30fps_cmd-$tag.exe"
+          }
+          Get-ChildItem -Path dist || true
+
+      - name: Upload binary to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: |
+            dist/ffmpeg1080p30fps_cmd-${{ github.ref_name }}.exe
+            

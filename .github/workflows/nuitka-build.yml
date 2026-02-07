@@ -1,0 +1,88 @@
+name: Nuitka Build (Debian 12 bookworm)
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build inside Debian 12 (bookworm) container with Docker
+        run: |
+          set -eux
+          docker run --rm -v "${{ github.workspace }}:/work" -w /work debian:bookworm bash -lc '
+            set -eux
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update
+            apt-get install -y --no-install-recommends \
+              python3 python3-dev python3-pip python3-venv build-essential gcc g++ pkg-config \
+              libffi-dev libssl-dev libglib2.0-0 libsm6 libxrender1 libxext6 ca-certificates \
+              zlib1g libstdc++6 libgcc-s1 binutils patchelf
+
+            # create and use a virtual environment to avoid PEP 668 "externally-managed-environment"
+            python3 -m venv .venv
+            . .venv/bin/activate
+            pip install --upgrade pip setuptools wheel
+
+            if [ -f requirements.txt ]; then
+              pip install -r requirements.txt
+            else
+              pip install Flask opencv-python-headless numpy
+            fi
+
+            pip install --upgrade nuitka
+            python -m nuitka --onefile --lto=yes \
+              --output-dir=dist --output-filename=ffmpeg1080p30fps_cmd ffmpeg1080p30fps_cmd.py
+          '
+
+      - name: Fix permissions on dist produced by Docker
+        run: |
+          if [ -d dist ]; then
+            echo "Fixing ownership of dist files to runner user"
+            sudo chown -R $(id -u):$(id -g) dist || true
+            ls -la dist || true
+          fi
+
+      - name: List built files (for debug)
+        run: |
+          ls -la dist || true
+          file dist/ffmpeg1080p30fps_cmd* || true
+          du -sh dist/ffmpeg1080p30fps_cmd* || true
+          echo "--- ELF header ---"
+          if command -v readelf >/dev/null 2>&1; then
+            readelf -h dist/ffmpeg1080p30fps_cmd* || true
+          else
+            apt-get update && apt-get install -y binutils || true
+            readelf -h dist/ffmpeg1080p30fps_cmd* || true
+          fi
+          echo "--- ldd (shared libs) ---"
+          ldd dist/ffmpeg1080p30fps_cmd* || true
+
+      - name: Rename binary to include version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          echo "Renaming built binary to include tag name"
+          if [ -f "dist/ffmpeg1080p30fps_cmd" ]; then
+            mv dist/ffmpeg1080p30fps_cmd dist/ffmpeg1080p30fps_cmd-${{ github.ref_name }}-debian12
+          fi
+          ls -la dist || true
+
+      - name: Upload binary to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          files: |
+            dist/ffmpeg1080p30fps_cmd-${{ github.ref_name }}-debian12
