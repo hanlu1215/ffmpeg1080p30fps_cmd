@@ -76,7 +76,8 @@ def transcode_cmd(input_path):
     print("------------------------------------------------")
 
     threads = multiprocessing.cpu_count()
-    print(f"检测到 {threads} 个 CPU 核心，将用于 FFmpeg 的 -threads 参数。")
+    ffmpeg_threads = '0'  # 传递 '0' 让 FFmpeg/编码器自动决定线程数，通常更稳健
+    print(f"检测到 {threads} 个 CPU 核心，将用于 FFmpeg 的 -threads 参数（传递给 FFmpeg 的值={ffmpeg_threads}）。")
 
     ffmpeg_command = [
         'ffmpeg',
@@ -86,7 +87,7 @@ def transcode_cmd(input_path):
         '-r', '30',
         '-vf', 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2',
         '-preset', 'medium',
-        '-threads', str(threads),
+        '-threads', ffmpeg_threads,
         '-c:a', 'aac',
         '-b:a', '128k',
         '-y',
@@ -105,7 +106,9 @@ def transcode_cmd(input_path):
             encoding='utf-8'
         )
 
+        output_lines = []
         for line in process.stdout:
+            output_lines.append(line)
             if 'frame=' in line or 'time=' in line:
                 current_time = time.time()
                 if current_time - last_print_time >= 1:
@@ -115,16 +118,19 @@ def transcode_cmd(input_path):
 
         process.wait()
 
-        sys.stdout.write('\r' + ' ' * 80 + '\r')
+        sys.stdout.write('\r' + ' ' * 120 + '\r')
         sys.stdout.flush()
 
+        full_output = ''.join(output_lines)
         if process.returncode == 0:
             print("\n转码完成！")
             print(f"文件已保存至: {output_path}")
             return 0
         else:
             print(f"\nFFmpeg 进程退出，返回码: {process.returncode}")
-            print(process.communicate()[0])
+            print("----- FFmpeg 输出开始 -----")
+            print(full_output)
+            print("------ FFmpeg 输出结束 ------")
             return process.returncode
 
     except FileNotFoundError:
