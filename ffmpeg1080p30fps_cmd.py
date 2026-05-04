@@ -55,7 +55,7 @@ def get_video_metadata(file_path):
         return "N/A", "N/A"
 
 
-def transcode_cmd(input_path, disable_hwaccel=False):
+def transcode_cmd(input_path):
     if not os.path.isfile(input_path):
         print(f"输入文件不存在: {input_path}")
         return 2
@@ -79,16 +79,11 @@ def transcode_cmd(input_path, disable_hwaccel=False):
     ffmpeg_threads = '0'  # 传递 '0' 让 FFmpeg/编码器自动决定线程数，通常更稳健
     print(f"检测到 {threads} 个 CPU 核心，将用于 FFmpeg 的 -threads 参数（传递给 FFmpeg 的值={ffmpeg_threads}）。")
 
+    # 强制使用软件解码，避免系统尝试使用不可用的硬件解码器
     ffmpeg_command = [
         'ffmpeg',
+        '-hwaccel', 'none',
         '-i', input_path,
-    ]
-
-    # 如果要求禁用硬件加速，强制使用软件 h264 解码器
-    if disable_hwaccel:
-        ffmpeg_command += ['-c:v', 'h264']
-
-    ffmpeg_command += [
         '-c:v', 'libx264',
         '-b:v', '4500k',
         '-r', '30',
@@ -98,7 +93,7 @@ def transcode_cmd(input_path, disable_hwaccel=False):
         '-c:a', 'aac',
         '-b:a', '128k',
         '-y',
-        output_path
+        output_path,
     ]
 
     # 打印将要执行的完整命令，便于在终端重现问题
@@ -154,10 +149,9 @@ def transcode_cmd(input_path, disable_hwaccel=False):
 def main():
     parser = argparse.ArgumentParser(description='将视频转码为 1080p 30fps，输出文件与输入同目录')
     parser.add_argument('input', help='输入视频文件路径')
-    parser.add_argument('--disable-hwaccel', action='store_true', help='强制使用软件解码，禁用硬件加速（用于排查 v4l2m2m/其他 hw 解码问题）')
     args = parser.parse_args()
 
-    rc = transcode_cmd(args.input, disable_hwaccel=args.disable_hwaccel)
+    rc = transcode_cmd(args.input)
     sys.exit(rc)
 
 
